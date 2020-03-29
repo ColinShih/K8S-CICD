@@ -1,4 +1,4 @@
-FROM trafex/alpine-nginx-php7:latest
+FROM 192.168.149.132/colinrepo/alpine-nginx-php7:7.0
 MAINTAINER ColinShih
 COPY src/. /var/www/html
 COPY config/php-fpm.conf /etc/php7
