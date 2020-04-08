@@ -12,12 +12,12 @@ spec:
   template:
     metadata:
       labels:
-          app: php-wp 
+        app: php-wp 
     spec:
       imagePullSecrets:
       - name: $SECRET_NAME 
       containers:
-          - name: php-wp 
+      - name: php-wp 
         image: $IMAGE_NAME 
         imagePullPolicy: IfNotPresent
         ports:
