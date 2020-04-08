@@ -50,7 +50,7 @@ spec:
 #apiVersion: v1
 #kind: Service
 #metadata:
-#  name: ng-php-wp
+#  name: php-wp
 #  namespace: php-test
 #spec:
 #  type: NodePort
