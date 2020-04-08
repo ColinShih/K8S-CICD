@@ -2,7 +2,7 @@
 apiVersion: apps/v1 
 kind: Deployment
 metadata:
-  name: php-wp-deploy
+  name: $APP_NAME
   namespace: php-test
 spec:
   replicas: 1
