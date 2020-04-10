@@ -1,3 +1,4 @@
+// original version
 // harbor url
 def registry = "192.168.149.132"
 // project info
