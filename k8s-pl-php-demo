@@ -1,0 +1,86 @@
+// public param
+def registry = "192.168.149.132"
+
+// project info
+//def project = "php-demo"   // project group name defined in jenkins param
+//def app_name = "php-wordpress"    // application name defined in jenkins param
+def git_address = "git@192.168.149.101:/opt/scripts/gitrepo/k8s-php-demo.git"
+def image_name = "${registry}/${project_name}/${app_name}:${BUILD_TIMESTAMP}_${BUILD_NUMBER}"
+def app_port = "8080"
+def logpath = "/var/log"
+def healthcheck_path = "/index.html"
+def svc_port = "80"
+def ing_host = "wp.colin.org"
+def ing_path = "/"
+
+// authorization
+def git_auth = "767e4478-faa8-48ea-b5c2-8af9a204191d"
+def docker_registry_auth = "fee1dfe2-f06b-4053-97e8-c076e208cf03"
+def k8s_auth = "d4cf1176-5b89-44fb-8f6f-64b09f98d37e"
+def secret_name = "phpsecret"
+
+// slave template
+def slave_image="${registry}/library/jenkins-slave-jdk:1.8"
+
+podTemplate(label: 'jenkins-slave', cloud: 'kubernetes-136', containers: [
+    containerTemplate(
+        name: 'jnlp-jdk', 
+        image: "${slave_image}"
+    ),
+  ],
+  volumes: [
+    hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
+    hostPathVolume(mountPath: '/usr/bin/docker', hostPath: '/usr/bin/docker'),
+//    hostPathVolume(mountPath: '/opt/scripts/jenkins_k8s', hostPath: '/opt/scripts/jenkins_k8s')
+  ],
+)
+{
+    node("jenkins-slave"){
+        stage('Pull Code') {
+            checkout([$class: 'GitSCM', branches: [[name: '${git_branch}']], userRemoteConfigs: [[credentialsId: "${git_auth}", url: "${git_address}"]]])
+        }
+		stage('Build Image'){
+		    sh "docker build -t ${image_name} ."
+		}
+        stage('Push Image'){
+			withCredentials([usernamePassword(credentialsId: "${docker_registry_auth}", passwordVariable: 'password', usernameVariable: 'username')]){
+			   sh """
+				   docker login -u ${username} -p '${password}' ${registry}
+				   docker push ${image_name}
+			   """
+			}
+        }
+        stage('Deploy to k8s'){
+			  sh """
+				   sed -i 's#\$IMAGE_NAME#${image_name}#' deploy.yml
+				   sed -i 's#\$SECRET_NAME#${secret_name}#' deploy.yml
+				   sed -i 's#\$APP_NAME#${app_name}#' deploy.yml
+				   sed -i 's#\$APP_PORT#${app_port}#' deploy.yml
+				   sed -i 's#\$LOGPATH#${logpath}#' deploy.yml
+				   sed -i 's#\$HEALTHCHECK_PATH#${healthcheck_path}#' deploy.yml
+				   sed -i 's#\$SVC_PORT#${svc_port}#' deploy.yml
+				   sed -i 's#\$ING_HOST#${ing_host}#' deploy.yml
+				   sed -i 's#\$ING_PATH#${ing_path}#' deploy.yml
+              """
+              kubernetesDeploy configs: 'deploy.yml', kubeconfigId: "${k8s_auth}"
+        }
+        stage('Merge Code') {
+            build job: 'common-merge-code', parameters: [gitParameter(name: 'branch', value: git_branch), string(name: 'targetBranch', value: targetBranch), string(name: 'project_name', value: "${app_name}"), string(name: 'git_address', value: "${git_address}")]  
+        }
+    }
+    node("master"){
+        stage('Rollback Operation') {
+             script {
+                def version = input message: "确认回滚?", ok: "是", submitter: "colins",parameters: [string(name: 'version', defaultValue: '0', description: '构建生产历史版本号,0表示回滚到上一个版本')]
+                if("${version}" == '0'){
+                    echo "回滚到上一个版本,版本号为${version}"
+                    sh '/opt/scripts/jenkins_k8s/k8s-rollback.sh ${app_name}'
+                 }else{
+                    echo "回滚到指定版本,版本号为${version}"
+                    sh '/opt/scripts/jenkins_k8s/k8s-deployment.sh pro ${version}'
+                    sh '/opt/scripts/jenkins_k8s/jenkins-rollback.sh ${version}'
+                }
+            }
+        }    
+    }
+}
